@@ -1,17 +1,25 @@
 using GLMakie 
 using StaticArrays
 
-include("src/butscher.jl")
+include("butscher.jl")
+include("soundpropagation.jl")
 
-struct SonarInput
+mutable struct SonarInput
+    
     start :: SVector{3,<:Number} 
-    topdownlimits :: Tuple # Angle
+
+    topdownlimits :: Tuple # Angle 
     sideviewlimits :: Tuple # Angle
-    raynumber :: Integer
-    maxstep :: Integer
-    maxdistance :: Number
-    stepsize :: Number
-    butscher :: Function
+    
+    raynumber :: Integer 
+
+    maxstep :: Integer 
+    maxdistance :: Number 
+    
+    stepsize :: Number 
+    butscher :: Function 
+
+    formula :: AbstractFormula
 end
 
 function initfigure() :: Figure 
@@ -20,7 +28,18 @@ function initfigure() :: Figure
     return fig
 end
 
-function initcontrols(fig :: Figure)
+
+function initcontrols(fig :: Figure) :: SonarInput
+
+    input :: SonarInput = SonarInput(
+        SVector(0,0,0),
+        (0,30),(0,75),
+        16,
+        120, 8500,
+        10,
+        get_euler_tableau,
+        Formula3D(mackenzie,mackenzie_dr,mackenzie_dz,0) # TODO Fix the 3rd derivative
+    )
 
     #TODO: Fix layout sizing
     other_gl = fig[2,1] = GridLayout()
@@ -30,30 +49,71 @@ function initcontrols(fig :: Figure)
     topdown_slider = addsliderwithpolaraxis("Sonar Top-down Angle",1,(0,2pi),topdown_gl,"Top-down starting angle", "Top-down closing angle")
     sideview_slider = addsliderwithpolaraxis("Sonar Sideview Angle",-1,(0,pi),sideview_gl,"Side-view starting angle", "Side-view closing angle")
 
-    Label(other_gl[1,1],"Number of Rays to Launch:",halign = :left)
-    Textbox(other_gl[1,2],validator = Int16,placeholder = "16",halign = :left)
+    input = addtextboxinputs(other_gl,input)
 
-    Label(other_gl[2,1],"Maximum Number of Steps:",halign = :left)
-    Textbox(other_gl[2,2],validator = Int16, placeholder = "120",halign = :left)
+    return input
+end
 
-    Label(other_gl[3,1],"Maximum Distance:",halign = :left)
-    Textbox(other_gl[3,2],validator = Float32, placeholder = "6000",halign = :left)
 
-    Label(other_gl[4,1],"Starting Stepsize:",halign = :left)
-    Textbox(other_gl[4,2],validator = Float32, placeholder = "2.5",halign = :left)
+function addtextboxinputs(gl :: GridLayout,input :: SonarInput) :: SonarInput
+    Label(gl[1,1],"Number of Rays to Launch:",halign = :left)
+    raynuminput = Textbox(gl[1,2],validator = Int16,placeholder = "16",halign = :left)
+
+    Label(gl[2,1],"Maximum Number of Steps:",halign = :left)
+    maxstepsinput = Textbox(gl[2,2],validator = Int16, placeholder = "120",halign = :left)
+
+    Label(gl[3,1],"Maximum Distance:",halign = :left)
+    maxdistanceinput = Textbox(gl[3,2],validator = Float32, placeholder = "6000",halign = :left)
+
+    Label(gl[4,1],"Starting Stepsize:",halign = :left)
+    startingstepsizeinput = Textbox(gl[4,2],validator = Float32, placeholder = "2.5",halign = :left)
 
     funcs = [get_euler_tableau,get_midpoint_tableau,get_rk4_tableau,get_rkf45_tableau]
 
-    Label(other_gl[5,1],"RK Method:",halign = :left)
-    Menu(other_gl[5,2],options = zip(["Euler","Midpoint","RK4","RKF45"],funcs),default = "Euler",halign = :left)
+    Label(gl[5,1],"RK Method:",halign = :left)
+    rkmenu = Menu(gl[5,2],options = zip(["Euler","Midpoint","RK4","RKF45"],funcs),default = "Euler",halign = :left)
 
-    pos_gl = other_gl[6,1:2] = GridLayout()
+    pos_gl = gl[6,1:2] = GridLayout(halign = :left)
 
     Label(pos_gl[1,1],"Starting Position (X,Y,Z):")
-    Textbox(pos_gl[1,2],validator = Float32, placeholder = "2.5",halign = :left)
-    Textbox(pos_gl[1,3],validator = Float32, placeholder = "2.5",halign = :left)
-    Textbox(pos_gl[1,4],validator = Float32, placeholder = "2.5",halign = :left)
+    startingposinput_x = Textbox(pos_gl[1,2],validator = Float32, placeholder = "2.5",halign = :left)
+    startingposinput_y = Textbox(pos_gl[1,3],validator = Float32, placeholder = "2.5",halign = :left)
+    startingposinput_z = Textbox(pos_gl[1,4],validator = Float32, placeholder = "2.5",halign = :left)
 
+    on(raynuminput.stored_string) do val
+        input.raynumber = parse(Int16,val);
+    end
+
+    on(maxstepsinput.stored_string) do val
+        input.maxstep = parse(Int16,val);
+    end
+
+    on(maxdistanceinput.stored_string) do val
+        input.maxdistance = parse(Float32,val);
+    end
+
+    on(startingstepsizeinput.stored_string) do val
+        input.stepsize = parse(Float32,val);
+    end
+
+    on(rkmenu.selection) do sel
+        input.butscher = sel;
+    end
+
+    on(startingposinput_x.stored_string) do x
+        input.start[1] = parse(Float32,x);
+    end
+
+    on(startingposinput_y.stored_string) do y 
+        input.start[2] = parse(Float32,y);
+    end
+
+    on(startingposinput_z.stored_string) do z
+        input.start[3] = parse(Float32,z);
+    end
+
+
+    return input;
 end
 
 function addsliderwithpolaraxis(
